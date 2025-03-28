@@ -1,48 +1,49 @@
-import fitz
 import openai
-from azure.search.documents import SearchClient
-from azure.search.documents.models import SearchQuery
 from azure.core.credentials import AzureKeyCredential
+from azure.search.documents import SearchClient
+from azure.search.documents.models import QueryType
 
-openai.api_key = "<SUA-API-KEY-DA-OPENAI>"
-endpoint = "https://<SEU-ENDPOINT-AQUI>.search.windows.net"
-api_key = "<SUA-CHAVE-AQUI>"
-index_name = "<SEU-NOME-DO-ÍNDICE>"
+search_endpoint = "https://<YOUR_SEARCH_SERVICE_NAME>.search.windows.net"
+search_api_key = "<YOUR_SEARCH_API_KEY>"
+index_name = "<YOUR_INDEX_NAME>"
 
-search_client = SearchClient(endpoint=endpoint, index_name=index_name, credential=AzureKeyCredential(api_key))
+openai.api_key = "<YOUR_OPENAI_API_KEY>"
 
-def extrair_texto_pdf(caminho_pdf):
-    documento = fitz.open(caminho_pdf)
-    texto_completo = ""
-    for pagina in documento:
-        texto_completo += pagina.get_text()
-    return texto_completo
+search_client = SearchClient(
+    endpoint=search_endpoint,
+    index_name=index_name,
+    credential=AzureKeyCredential(search_api_key)
+)
 
-def buscar_documento(query):
-    results = search_client.search(query)
-    documentos_encontrados = []
-    for result in results:
-        documentos_encontrados.append(result)
-    return documentos_encontrados
-
-def responder_duvida_sna(pergunta, contexto):
-    prompt = f"Com base no seguinte contexto sobre Análise de Redes Sociais (SNA):\n{contexto}\n\nPergunta: {pergunta}\nResposta:"
-    resposta = openai.Completion.create(
-        engine="text-davinci-003",
-        prompt=prompt,
-        max_tokens=150
+def query_azure_search(query):
+    results = search_client.search(
+        query,
+        query_type=QueryType.SIMPLE,
+        top=5 
     )
-    return resposta.choices[0].text.strip()
+    documents = [result['content'] for result in results]
+    return documents
 
-def fluxo_completo(caminho_pdf, pergunta):
-    texto_pdf = extrair_texto_pdf(caminho_pdf)
-    
-    resultados_busca = buscar_documento("rede social análise")
-    
-    contexto_relevante = " ".join([doc['conteúdo'] for doc in resultados_busca])
-    
-    resposta_sna = responder_duvida_sna(pergunta, contexto_relevante)
-    return resposta_sna
+def generate_response(query, documents):
+    prompt = f"Você é um assistente amigável e paciente especializado em Análise de Redes Sociais (SNA). Responda de forma clara, simples e amigável à seguinte dúvida sobre SNA:\n\nPergunta: {query}\n\nDocumentos:\n" + "\n".join(documents) + "\n\nResposta:"
 
-resposta = fluxo_completo("documento.pdf", "O que é centralidade em análise de redes sociais?")
-print(resposta)
+    response = openai.Completion.create(
+        model="gpt-4o",
+        prompt=prompt,
+        max_tokens=200,
+        temperature=0.8 
+    )
+    return response.choices[0].text.strip()
+
+def chatbot(query):
+    documents = query_azure_search(query)
+    
+    response = generate_response(query, documents)
+    
+    return response
+
+if __name__ == "__main__":
+    user_query = input("Digite sua pergunta sobre Análise de Redes Sociais (SNA): ")
+    response = chatbot(user_query)
+    print("\nResposta do chatbot:")
+    print(response)
